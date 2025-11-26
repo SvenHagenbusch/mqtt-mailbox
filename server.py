@@ -1,4 +1,5 @@
 import logging
+import os
 import warnings
 
 # --- Workaround für amqtt Warnungen ---
@@ -13,12 +14,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
-from amqtt.broker import Broker
 from amqtt.client import MQTTClient
 
 # --- Konfiguration ---
 BASE_TOPIC = "home/mailbox"
-TOPIC_WILDCARD = f"{BASE_TOPIC}/#"
+TOPIC_WILDCARD = f"{BASE_TOPIC}"
+BROKER_ADDRESS = os.getenv("BROKER_ADDRESS", "localhost:1883")
 
 # --- Logging ---
 logging.basicConfig(
@@ -76,51 +77,16 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 
-# --- MQTT Logik (Stabile Konfiguration) ---
-BROKER_CONFIG = {
-    "listeners": {
-        "default": {
-            "type": "tcp",
-            "bind": "0.0.0.0:1883",
-        },
-    },
-    "sys_interval": 0,  # 0 deaktiviert das interne System-Topic (spart Logs)
-    # Wir nutzen die klassische Auth-Config, da diese zuverlässiger lädt als die Plugin-Struktur
-    "auth": {
-        "allow_anonymous": True,
-        "password_file": None,
-        "plugins": ["auth_anonymous"],
-    },
-    "topic-check": {"enabled": False},
-}
-
-
+# --- MQTT Logik ---
 class MailboxBackend:
     def __init__(self):
         self.client = MQTTClient()
 
-    async def start_broker(self):
-        try:
-            self.broker = Broker(BROKER_CONFIG)
-            await self.broker.start()
-            logger.info("✅ MQTT Broker läuft auf Port 1883")
-        except Exception as e:
-            logger.error(f"Fehler beim Starten des Brokers: {e}")
-            # Falls setuptools fehlt, geben wir einen Hinweis
-            try:
-                import setuptools
-            except ImportError:
-                logger.critical(
-                    "ACHTUNG: 'setuptools' fehlt! Bitte in requirements.txt ergänzen."
-                )
-            raise e
-
     async def process_messages(self):
         try:
-            await asyncio.sleep(2)  # Warte kurz auf Broker-Start
-            await self.client.connect("mqtt://localhost:1883")
+            await self.client.connect(f"mqtt://{BROKER_ADDRESS}")
             await self.client.subscribe([(TOPIC_WILDCARD, 1)])
-            logger.info("✅ Backend Client verbunden")
+            logger.info(f"✅ Backend Client verbunden mit {BROKER_ADDRESS}")
 
             while True:
                 message = await self.client.deliver_message()
@@ -132,6 +98,7 @@ class MailboxBackend:
                     if not payload:
                         continue
                     data = json.loads(payload)
+                    logger.info(f"received json: {data}")
 
                     frontend_data = {}
 
@@ -170,7 +137,7 @@ async def main():
     server = uvicorn.Server(config)
 
     await asyncio.gather(
-        backend.start_broker(), backend.process_messages(), server.serve()
+        backend.process_messages(), server.serve()
     )
 
 

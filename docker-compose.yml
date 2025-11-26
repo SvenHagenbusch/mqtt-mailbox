@@ -1,0 +1,17 @@
+services:
+  mailbox-server:
+    build: .
+    container_name: mailbox-iot-backend
+    restart: unless-stopped
+    ports:
+      # Dashboard Port: Browser -> Docker
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1  # Zeigt Python-Logs sofort im Docker-Log an
+      - BROKER_ADDRESS=mailboxqtt:1883  # Adresse des MQTT Brokers
+  mailboxqtt:
+    image: heofthetea/mailboxqtt:0.1.0-bookworm
+    restart: unless-stopped
+    container_name: mailboxqtt
+    ports:
+      - 11883:1883
