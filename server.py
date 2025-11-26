@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 from amqtt.broker import Broker
-from amqtt.client import MQTTClient, ConnectException
+from amqtt.client import MQTTClient
 
 # --- Konfiguration ---
 BASE_TOPIC = "home/mailbox"
