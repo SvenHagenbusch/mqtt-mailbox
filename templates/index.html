@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Briefkasten Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <style>
+        .status-card { text-align: center; padding: 20px; border-radius: 15px; margin-bottom: 20px; transition: all 0.3s ease; }
+        .state-empty { background-color: #2ecc71; color: white; }
+        .state-mail { background-color: #f1c40f; color: black; }
+        .state-full { background-color: #e74c3c; color: white; }
+        .state-emptied { background-color: #3498db; color: white; }
+        .huge-icon { font-size: 4rem; display: block; margin-bottom: 10px; }
+        .metric-value { font-size: 2rem; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <hgroup>
+            <h1>📬 Smart Mailbox Monitor</h1>
+            <h2>Live Status vom ESP32</h2>
+        </hgroup>
+
+        <article id="status-card" class="status-card state-empty">
+            <span id="status-icon" class="huge-icon">📭</span>
+            <h3 id="status-text">Warte auf Daten...</h3>
+            <small>Zustand</small>
+        </article>
+
+        <div class="grid">
+            <article>
+                <header>📏 Distanz Sensor</header>
+                <div class="metric-value"><span id="distance">--</span> cm</div>
+                <progress id="dist-progress" value="0" max="100"></progress>
+                <small>Rohwert vom Ultraschall</small>
+            </article>
+
+            <article>
+                <header>📡 Signalqualität</header>
+                <div class="metric-value"><span id="confidence">--</span> %</div>
+                <small>Erfolgsrate der Messung</small>
+            </article>
+        </div>
+
+        <article>
+            <header>📝 Letzte Ereignisse</header>
+            <table role="grid">
+                <thead>
+                    <tr>
+                        <th>Zeit</th>
+                        <th>Event</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="event-log">
+                    </tbody>
+            </table>
+        </article>
+        
+        <footer>
+            <small>Verbindung zum Server: <span id="ws-status" style="color:red">Getrennt</span></small>
+        </footer>
+    </main>
+
+    <script>
+        const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        const statusCard = document.getElementById('status-card');
+        const statusIcon = document.getElementById('status-icon');
+        const statusText = document.getElementById('status-text');
+        const wsStatus = document.getElementById('ws-status');
+
+        ws.onopen = () => {
+            wsStatus.innerText = "Verbunden";
+            wsStatus.style.color = "green";
+        };
+
+        ws.onclose = () => {
+            wsStatus.innerText = "Verbindung verloren";
+            wsStatus.style.color = "red";
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            
+            // 1. Update Status Card
+            if (data.mailbox_state) {
+                updateState(data.mailbox_state);
+            }
+
+            // 2. Update Metriken
+            if (data.filtered_cm !== undefined) {
+                document.getElementById('distance').innerText = data.filtered_cm.toFixed(1);
+                // Angenommen 40cm ist leer (100%), 0cm ist voll
+                // Wir mappen das grob für die Progressbar
+                let progress = ((40 - data.filtered_cm) / 40) * 100; 
+                document.getElementById('dist-progress').value = Math.max(0, progress);
+            }
+            
+            if (data.success_rate !== undefined) {
+                document.getElementById('confidence').innerText = (data.success_rate * 100).toFixed(0);
+            }
+
+            // 3. Update Event Log (nur wenn es eine Event-Nachricht ist)
+            if (data.event_type) {
+                addLogEntry(data);
+            }
+        };
+
+        function updateState(state) {
+            // Reset classes
+            statusCard.className = 'status-card';
+            
+            switch(state) {
+                case 'empty':
+                    statusCard.classList.add('state-empty');
+                    statusIcon.innerText = '📭';
+                    statusText.innerText = 'Briefkasten ist leer';
+                    break;
+                case 'has_mail':
+                    statusCard.classList.add('state-mail');
+                    statusIcon.innerText = '📬';
+                    statusText.innerText = 'Neue Post ist da!';
+                    break;
+                case 'full':
+                    statusCard.classList.add('state-full');
+                    statusIcon.innerText = '🈵';
+                    statusText.innerText = 'Briefkasten ist voll!';
+                    break;
+                case 'emptied':
+                    statusCard.classList.add('state-emptied');
+                    statusIcon.innerText = '🗑️';
+                    statusText.innerText = 'Wurde gerade geleert';
+                    break;
+                default:
+                    statusCard.classList.add('state-empty');
+                    statusText.innerText = state;
+            }
+        }
+
+        function addLogEntry(data) {
+            const tbody = document.getElementById('event-log');
+            const row = document.createElement('tr');
+            const time = new Date().toLocaleTimeString();
+            
+            let details = "";
+            if (data.event_type === 'mail_drop') details = `Delta: ${data.delta_cm.toFixed(1)}cm`;
+            if (data.event_type === 'mail_collected') details = `Dauer: ${data.duration_ms}ms`;
+
+            row.innerHTML = `<td>${time}</td><td>${data.event_type}</td><td>${details}</td>`;
+            tbody.insertBefore(row, tbody.firstChild);
+            
+            // Behalte nur die letzten 5 Einträge
+            if (tbody.children.length > 5) tbody.removeChild(tbody.lastChild);
+        }
+    </script>
+</body>
+</html>
