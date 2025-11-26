@@ -40,7 +40,8 @@ class ConnectionManager:
             await websocket.send_text(json.dumps(self.last_status))
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
         """Sendet JSON-Daten an alle verbundenen Browser"""
@@ -48,7 +49,8 @@ class ConnectionManager:
         self.last_status.update(message)
 
         json_str = json.dumps(message)
-        for connection in self.active_connections:
+        # Erstelle eine Kopie der Liste zum Iterieren, um Fehler bei Trennungen zu vermeiden
+        for connection in self.active_connections[:]:
             try:
                 await connection.send_text(json_str)
             except Exception:
@@ -75,16 +77,19 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 
-# --- MQTT Logik ---
+# --- MQTT Logik (Korrigierte Konfiguration) ---
 BROKER_CONFIG = {
-    "listeners": {"default": {"type": "tcp", "bind": "0.0.0.0:1883"}},
-    "sys_interval": 10,
-    "auth": {
-        "allow_anonymous": True,
-        "password_file": None,
-        "plugins": ["auth_anonymous"],
+    "listeners": {
+        "default": {
+            "type": "tcp",
+            "bind": "0.0.0.0:1883",
+        },
     },
-    "topic-check": {"enabled": False},
+    # Neue Struktur: Alles Plugin-Spezifische kommt hier rein
+    "plugins": {
+        "auth_anonymous": {"allow_anonymous": True},
+        "topic_check": {"enabled": False},
+    },
 }
 
 
@@ -93,12 +98,16 @@ class MailboxBackend:
         self.client = MQTTClient()
 
     async def start_broker(self):
+        # Broker mit der neuen Config starten
         self.broker = Broker(BROKER_CONFIG)
         await self.broker.start()
         logger.info("✅ MQTT Broker läuft auf Port 1883")
 
     async def process_messages(self):
         try:
+            # Wichtig: Kurz warten, damit der Broker sicher gestartet ist
+            await asyncio.sleep(2)
+
             await self.client.connect("mqtt://localhost:1883")
             await self.client.subscribe([(TOPIC_WILDCARD, 1)])
             logger.info("✅ Backend Client verbunden")
@@ -110,6 +119,10 @@ class MailboxBackend:
 
                 try:
                     payload = packet.payload.data.decode("utf-8")
+                    # Überspringe leere Payloads (passiert manchmal bei Retained Messages Löschung)
+                    if not payload:
+                        continue
+
                     data = json.loads(payload)
 
                     # Daten für das Frontend aufbereiten
@@ -117,16 +130,14 @@ class MailboxBackend:
 
                     if topic.endswith("/status"):
                         # Status Update
-                        frontend_data = data  # Wir übernehmen die Daten 1:1
+                        frontend_data = data
                         logger.info(f"Status: {data.get('mailbox_state')}")
 
                     elif topic.endswith("/events/mail_drop"):
                         # Event: Post eingeworfen
                         frontend_data = data
                         frontend_data["event_type"] = "mail_drop"
-                        frontend_data["mailbox_state"] = data.get(
-                            "new_state"
-                        )  # Status sofort aktualisieren
+                        frontend_data["mailbox_state"] = data.get("new_state")
                         logger.info("EVENT: Post Einwurf!")
 
                     elif topic.endswith("/events/mail_collected"):
@@ -140,6 +151,8 @@ class MailboxBackend:
                     if frontend_data:
                         await manager.broadcast(frontend_data)
 
+                except json.JSONDecodeError:
+                    logger.warning(f"Ungültiges JSON empfangen auf {topic}")
                 except Exception as e:
                     logger.error(f"Fehler bei Verarbeitung: {e}")
 
@@ -149,15 +162,13 @@ class MailboxBackend:
 
 # --- Main Start Script ---
 async def main():
-    # 1. Initialisiere Backend Logik
     backend = MailboxBackend()
 
-    # 2. Konfiguriere Uvicorn (Webserver)
-    # Wir müssen uvicorn manuell starten, damit es im selben Loop wie MQTT läuft
+    # Konfiguriere Uvicorn
     config = uvicorn.Config(app=app, host="0.0.0.0", port=8000, log_level="warning")
     server = uvicorn.Server(config)
 
-    # 3. Starte alles parallel
+    # Starte alles parallel
     await asyncio.gather(
         backend.start_broker(), backend.process_messages(), server.serve()
     )
