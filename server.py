@@ -2,10 +2,6 @@ import logging
 import os
 import warnings
 
-# --- Workaround für amqtt Warnungen ---
-# Wir nutzen die "alte" stabile Config-Struktur, unterdrücken aber die Warnhinweise,
-# da die "neue" Struktur in manchen Umgebungen zu Import-Fehlern führt.
-warnings.filterwarnings("ignore", message=".*is deprecated.*")
 
 import asyncio
 import json
@@ -15,6 +11,11 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 from amqtt.client import MQTTClient
+
+# --- Workaround für amqtt Warnungen ---
+# Wir nutzen die "alte" stabile Config-Struktur, unterdrücken aber die Warnhinweise,
+# da die "neue" Struktur in manchen Umgebungen zu Import-Fehlern führt.
+warnings.filterwarnings("ignore", message=".*is deprecated.*")
 
 # --- Konfiguration ---
 BASE_TOPIC = "home/mailbox"
