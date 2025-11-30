@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore", message=".*is deprecated.*")
 
 # --- Konfiguration ---
 BASE_TOPIC = "home/mailbox"
-TOPIC_WILDCARD = f"{BASE_TOPIC}"
+TOPIC_WILDCARD = f"{BASE_TOPIC}/#"
 BROKER_ADDRESS = os.getenv("BROKER_ADDRESS", "localhost:1883")
 
 # --- Logging ---
