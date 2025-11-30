@@ -6,7 +6,7 @@ services:
     depends_on: [mailboxqtt]
     ports:
       # Dashboard Port: Browser -> Docker
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - PYTHONUNBUFFERED=1  # Zeigt Python-Logs sofort im Docker-Log an
       - BROKER_ADDRESS=mailboxqtt:1883  # Adresse des MQTT Brokers
