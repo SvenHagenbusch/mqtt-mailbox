@@ -11,8 +11,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
-from pydantic import BaseModel, Field
-from typing import Literal
+from pydantic import BaseModel, Field, ValidationError
+from typing import Literal, Optional
 from amqtt.client import MQTTClient
 
 # --- Workaround für amqtt Warnungen ---
@@ -33,35 +33,37 @@ logger = logging.getLogger("Server")
 
 # --- Pydantic Models ---
 class MailboxStatus(BaseModel):
-    device_ip: str
-    timestamp: str
+    device_ip: Optional[str] = None
+    timestamp: Optional[str] = None
     distance_cm: float
-    baseline_cm: float
-    threshold_cm: float
+    baseline_cm: Optional[float] = 40.0
+    threshold_cm: Optional[float] = None
     success_rate: float
     mailbox_state: Literal["empty", "has_mail", "full", "emptied"]
 
 
 class MailDropEvent(BaseModel):
-    device_ip: str
-    timestamp: str
+    device_ip: Optional[str] = None
+    timestamp: Optional[str] = None
     distance_cm: float
-    baseline_cm: float
-    duration_ms: int
-    confidence: float
-    success_rate: float
-    new_state: Literal["empty", "has_mail", "full", "emptied"]
+    baseline_cm: Optional[float] = 40.0
+    duration_ms: Optional[int] = None
+    confidence: Optional[float] = None
+    success_rate: Optional[float] = None
+    new_state: Optional[Literal["empty", "has_mail", "full", "emptied"]] = None
+    mailbox_state: Optional[Literal["empty", "has_mail", "full", "emptied"]] = None
 
 
 class MailCollectedEvent(BaseModel):
-    device_ip: str
-    timestamp: str
+    device_ip: Optional[str] = None
+    timestamp: Optional[str] = None
     before_cm: float
     after_cm: float
-    baseline_cm: float
-    duration_ms: int
-    success_rate: float
-    new_state: Literal["empty", "has_mail", "full", "emptied"]
+    baseline_cm: Optional[float] = 40.0
+    duration_ms: Optional[int] = None
+    success_rate: Optional[float] = None
+    new_state: Optional[Literal["empty", "has_mail", "full", "emptied"]] = None
+    mailbox_state: Optional[Literal["empty", "has_mail", "full", "emptied"]] = None
 
 
 # --- FastAPI Setup ---
@@ -140,27 +142,40 @@ class MailboxBackend:
 
                     frontend_data = None
 
-                    if topic.endswith("/status"):
-                        status = MailboxStatus(**data)
-                        frontend_data = status.model_dump()
-                        logger.info(f"Status: {status.mailbox_state}")
+                    try:
+                        if topic.endswith("/status"):
+                            status = MailboxStatus(**data)
+                            frontend_data = status.model_dump()
+                            logger.info(f"Status: {status.mailbox_state}")
 
-                    elif topic.endswith("/events/mail_drop"):
-                        event = MailDropEvent(**data)
-                        frontend_data = event.model_dump()
-                        frontend_data["event_type"] = "mail_drop"
-                        frontend_data["mailbox_state"] = event.new_state
-                        logger.info(f"EVENT: Post Einwurf! Confidence: {event.confidence}")
+                        elif topic.endswith("/events/mail_drop"):
+                            event = MailDropEvent(**data)
+                            frontend_data = event.model_dump()
+                            frontend_data["event_type"] = "mail_drop"
+                            # Use new_state if available, otherwise use mailbox_state
+                            frontend_data["mailbox_state"] = event.new_state or event.mailbox_state
+                            logger.info(f"EVENT: Post Einwurf! Confidence: {event.confidence}")
 
-                    elif topic.endswith("/events/mail_collected"):
-                        event = MailCollectedEvent(**data)
-                        frontend_data = event.model_dump()
-                        frontend_data["event_type"] = "mail_collected"
-                        frontend_data["mailbox_state"] = event.new_state
-                        logger.info(f"EVENT: Post entnommen! Duration: {event.duration_ms}ms")
+                        elif topic.endswith("/events/mail_collected"):
+                            event = MailCollectedEvent(**data)
+                            frontend_data = event.model_dump()
+                            frontend_data["event_type"] = "mail_collected"
+                            # Use new_state if available, otherwise use mailbox_state
+                            frontend_data["mailbox_state"] = event.new_state or event.mailbox_state
+                            logger.info(f"EVENT: Post entnommen! Duration: {event.duration_ms}ms")
 
-                    if frontend_data:
-                        await manager.broadcast(frontend_data)
+                        if frontend_data:
+                            await manager.broadcast(frontend_data)
+
+                    except ValidationError as ve:
+                        logger.error(f"Pydantic validation error on {topic}: {ve}")
+                        logger.error(f"Received data: {data}")
+                        # Fallback: send raw data with event_type added
+                        if topic.endswith("/events/mail_drop"):
+                            data["event_type"] = "mail_drop"
+                        elif topic.endswith("/events/mail_collected"):
+                            data["event_type"] = "mail_collected"
+                        await manager.broadcast(data)
 
                 except json.JSONDecodeError:
                     logger.warning(f"Ungültiges JSON auf {topic}")
