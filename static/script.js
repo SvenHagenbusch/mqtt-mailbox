@@ -18,6 +18,7 @@ function connectToSocket() {
   };
 
   ws.onclose = () => {
+    console.warn("ws connection closed")
     wsStatus.innerText = "Verbindung verloren";
     wsStatus.style.color = "red";
   };
@@ -35,7 +36,7 @@ function connectToSocket() {
     if (data.distance_cm !== undefined) {
       document.getElementById("distance").innerText =
         data.distance_cm.toFixed(1);
-      
+
       // Calculate progress based on baseline (baseline = empty = 0% filled)
       const baseline = data.baseline_cm || 40.0;
       let progress = ((baseline - data.distance_cm) / baseline) * 100;
@@ -89,7 +90,7 @@ function updateState(state) {
 function addLogEntry(data) {
   const tbody = document.getElementById("event-log");
   const row = document.createElement("tr");
-  
+
   // Use timestamp from data if available, otherwise use current time
   const time = data.timestamp || new Date().toLocaleTimeString();
 
