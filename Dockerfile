@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Den Server-Code und das Template-Verzeichnis kopieren
 COPY server.py .
 COPY templates/ templates/
+COPY static/ static/
 
 # Ports freigeben:
 # 8000 = Web Dashboard (für den Browser)

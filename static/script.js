@@ -1,4 +1,8 @@
-const ws = new WebSocket(`ws://${window.location.host}/ws`);
+// whether we need to append an `s` to the websocket address
+// based on whether we're using http or https
+const securePrefix = window.location.href.match("^http(s?)")[1]
+
+const ws = new WebSocket(`ws${securePrefix}://${window.location.host}/ws`);
 const statusCard = document.getElementById("status-card");
 const statusIcon = document.getElementById("status-icon");
 const statusText = document.getElementById("status-text");
@@ -14,13 +18,14 @@ function connectToSocket() {
   };
 
   ws.onclose = () => {
+    console.warn("ws connection closed")
     wsStatus.innerText = "Verbindung verloren";
     wsStatus.style.color = "red";
   };
 
   ws.onmessage = (event) => {
-    console.log("message: ", event);
     const data = JSON.parse(event.data);
+    console.log("message: ", data);
 
     // 1. Update Status Card
     if (data.mailbox_state) {
@@ -28,13 +33,14 @@ function connectToSocket() {
     }
 
     // 2. Update Metriken
-    if (data.filtered_cm !== undefined) {
+    if (data.distance_cm !== undefined) {
       document.getElementById("distance").innerText =
-        data.filtered_cm.toFixed(1);
-      // Angenommen 40cm ist leer (100%), 0cm ist voll
-      // Wir mappen das grob für die Progressbar
-      let progress = ((40 - data.filtered_cm) / 40) * 100;
-      document.getElementById("dist-progress").value = Math.max(0, progress);
+        data.distance_cm.toFixed(1);
+
+      // Calculate progress based on baseline (baseline = empty = 0% filled)
+      const baseline = data.baseline_cm || 40.0;
+      let progress = ((baseline - data.distance_cm) / baseline) * 100;
+      document.getElementById("dist-progress").value = Math.max(0, Math.min(100, progress));
     }
 
     if (data.success_rate !== undefined) {
@@ -84,13 +90,18 @@ function updateState(state) {
 function addLogEntry(data) {
   const tbody = document.getElementById("event-log");
   const row = document.createElement("tr");
-  const time = new Date().toLocaleTimeString();
+
+  // Use timestamp from data if available, otherwise use current time
+  const time = data.timestamp || new Date().toLocaleTimeString();
 
   let details = "";
-  if (data.event_type === "mail_drop")
-    details = `Delta: ${data.delta_cm.toFixed(1)}cm`;
-  if (data.event_type === "mail_collected")
-    details = `Dauer: ${data.duration_ms}ms`;
+  if (data.event_type === "mail_drop") {
+    const delta = data.baseline_cm - data.distance_cm;
+    details = `Distanz: ${data.distance_cm.toFixed(1)}cm, Confidence: ${(data.confidence * 100).toFixed(0)}%`;
+  }
+  if (data.event_type === "mail_collected") {
+    details = `Vorher: ${data.before_cm.toFixed(1)}cm, Nachher: ${data.after_cm.toFixed(1)}cm, Dauer: ${data.duration_ms}ms`;
+  }
 
   row.innerHTML = `<td>${time}</td><td>${data.event_type}</td><td>${details}</td>`;
   tbody.insertBefore(row, tbody.firstChild);
