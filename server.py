@@ -11,6 +11,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
+from pydantic import BaseModel, Field
+from typing import Literal
 from amqtt.client import MQTTClient
 
 # --- Workaround für amqtt Warnungen ---
@@ -28,6 +30,39 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("Server")
+
+# --- Pydantic Models ---
+class MailboxStatus(BaseModel):
+    device_ip: str
+    timestamp: str
+    distance_cm: float
+    baseline_cm: float
+    threshold_cm: float
+    success_rate: float
+    mailbox_state: Literal["empty", "has_mail", "full", "emptied"]
+
+
+class MailDropEvent(BaseModel):
+    device_ip: str
+    timestamp: str
+    distance_cm: float
+    baseline_cm: float
+    duration_ms: int
+    confidence: float
+    success_rate: float
+    new_state: Literal["empty", "has_mail", "full", "emptied"]
+
+
+class MailCollectedEvent(BaseModel):
+    device_ip: str
+    timestamp: str
+    before_cm: float
+    after_cm: float
+    baseline_cm: float
+    duration_ms: int
+    success_rate: float
+    new_state: Literal["empty", "has_mail", "full", "emptied"]
+
 
 # --- FastAPI Setup ---
 app = FastAPI()
@@ -103,23 +138,26 @@ class MailboxBackend:
                     data = json.loads(payload)
                     logger.info(f"received json: {data}")
 
-                    frontend_data = {}
+                    frontend_data = None
 
                     if topic.endswith("/status"):
-                        frontend_data = data
-                        logger.info(f"Status: {data.get('mailbox_state')}")
+                        status = MailboxStatus(**data)
+                        frontend_data = status.model_dump()
+                        logger.info(f"Status: {status.mailbox_state}")
 
                     elif topic.endswith("/events/mail_drop"):
-                        frontend_data = data
+                        event = MailDropEvent(**data)
+                        frontend_data = event.model_dump()
                         frontend_data["event_type"] = "mail_drop"
-                        frontend_data["mailbox_state"] = data.get("new_state")
-                        logger.info("EVENT: Post Einwurf!")
+                        frontend_data["mailbox_state"] = event.new_state
+                        logger.info(f"EVENT: Post Einwurf! Confidence: {event.confidence}")
 
                     elif topic.endswith("/events/mail_collected"):
-                        frontend_data = data
+                        event = MailCollectedEvent(**data)
+                        frontend_data = event.model_dump()
                         frontend_data["event_type"] = "mail_collected"
-                        frontend_data["mailbox_state"] = data.get("new_state")
-                        logger.info("EVENT: Post entnommen!")
+                        frontend_data["mailbox_state"] = event.new_state
+                        logger.info(f"EVENT: Post entnommen! Duration: {event.duration_ms}ms")
 
                     if frontend_data:
                         await manager.broadcast(frontend_data)
