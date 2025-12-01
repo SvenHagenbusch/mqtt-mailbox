@@ -1,4 +1,8 @@
-const ws = new WebSocket(`ws://${window.location.host}/ws`);
+// whether we need to append an `s` to the websocket address
+// based on whether we're using http or https
+const securePrefix = window.location.href.match("^http(s?)")[1]
+
+const ws = new WebSocket(`ws${securePrefix}://${window.location.host}/ws`);
 const statusCard = document.getElementById("status-card");
 const statusIcon = document.getElementById("status-icon");
 const statusText = document.getElementById("status-text");
