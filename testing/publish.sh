@@ -7,7 +7,7 @@ BROKER="mailbox.oci.heofthetea.me"
 CLIENT_ID="test_pub"
 QOS=1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENCODE_SCRIPT="$SCRIPT_DIR/testing/encode.py"
+ENCODE_SCRIPT="$SCRIPT_DIR/mvp.py"
 
 # Helper function to get current unix timestamp
 get_timestamp() {
@@ -94,7 +94,7 @@ publish_status() {
     "device_ip": "192.168.1.100",
     "timestamp": $timestamp,
     "distance": 373,
-    "state": "has_mail",
+    "state": "empty",
     "success_rate": 98,
     "baseline": 400,
     "confidence": 0

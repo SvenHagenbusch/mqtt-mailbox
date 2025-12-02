@@ -33,13 +33,13 @@ function connectToSocket() {
     }
 
     // 2. Update Metriken
-    if (data.distance_cm !== undefined) {
+    if (data.distance !== undefined) {
       document.getElementById("distance").innerText =
-        data.distance_cm.toFixed(1);
+        data.distance.toFixed(1);
 
       // Calculate progress based on baseline (baseline = empty = 0% filled)
-      const baseline = data.baseline_cm || 40.0;
-      let progress = ((baseline - data.distance_cm) / baseline) * 100;
+      const baseline = data.baseline || 40.0;
+      let progress = ((baseline - data.distance) / baseline) * 100;
       document.getElementById("dist-progress").value = Math.max(0, Math.min(100, progress));
     }
 
@@ -92,20 +92,34 @@ function addLogEntry(data) {
   const row = document.createElement("tr");
 
   // Use timestamp from data if available, otherwise use current time
-  const time = data.timestamp || new Date().toLocaleTimeString();
+  // Unix timestamp is in seconds, JavaScript Date needs milliseconds
+  const time = data.timestamp ? new Date(data.timestamp * 1000) : new Date();
 
   let details = "";
   if (data.event_type === "mail_drop") {
-    const delta = data.baseline_cm - data.distance_cm;
-    details = `Distanz: ${data.distance_cm.toFixed(1)}cm, Confidence: ${(data.confidence * 100).toFixed(0)}%`;
+    const delta = data.baseline - data.distance;
+    details = `Distanz: ${data.distance.toFixed(1)}cm, Confidence: ${(data.confidence * 100).toFixed(0)}%`;
   }
   if (data.event_type === "mail_collected") {
-    details = `Vorher: ${data.before_cm.toFixed(1)}cm, Nachher: ${data.after_cm.toFixed(1)}cm, Dauer: ${data.duration_ms}ms`;
+    details = `Distanz: ${data.distance.toFixed(1)}cm, Success Rate: ${(data.success_rate * 100).toFixed(0)}%`;
   }
 
-  row.innerHTML = `<td>${time}</td><td>${data.event_type}</td><td>${details}</td>`;
+  // formatted = `${time.getDay()}.${time.getMonth()}.${time.getFullYear()}` + `${time.getHours()}:${time.getMinutes()}:${time.getSeconds()}`;
+
+  row.innerHTML = `<td>${formatDate(time)}</td><td>${data.event_type}</td><td>${details}</td>`;
   tbody.insertBefore(row, tbody.firstChild);
 
   // Behalte nur die letzten 5 Einträge
   if (tbody.children.length > 5) tbody.removeChild(tbody.lastChild);
+}
+
+
+function formatDate(date) {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${day}.${month}.${year} ${hours}:${minutes}:${seconds}`;
 }
