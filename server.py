@@ -1,19 +1,20 @@
-import logging
-import os
-import warnings
-
-
 import asyncio
 import json
+import logging
+from mailbox import Mailbox
+import os
+import warnings
+from datetime import time
+from typing import Literal
+
 import uvicorn
+from amqtt.client import MQTTClient
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.requests import Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.requests import Request
-from pydantic import BaseModel, Field, ValidationError
-from typing import Literal, Optional
-from amqtt.client import MQTTClient
+from pydantic import BaseModel, ValidationError
 
 # --- Workaround für amqtt Warnungen ---
 # Wir nutzen die "alte" stabile Config-Struktur, unterdrücken aber die Warnhinweise,
@@ -31,39 +32,69 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Server")
 
-# --- Pydantic Models ---
-class MailboxStatus(BaseModel):
-    device_ip: Optional[str] = None
-    timestamp: Optional[str] = None
-    distance_cm: float
-    baseline_cm: Optional[float] = 40.0
-    threshold_cm: Optional[float] = None
-    success_rate: float
-    mailbox_state: Literal["empty", "has_mail", "full", "emptied"]
 
+# Binary Protocol Format:
+# ip: u32
+# timestamp: (unix) u32
+# distance: u16
+# state: 3 bit -> u8
+# success_rate: u8,
+# baseline: u16
+# confidence (u8) (0x0 bei collected & status)
+class MailboxTelemetry(BaseModel):
+    device_ip: str
+    timestamp: int # unix timestamp
+    distance: int  # u16
+    state: Literal["empty", "has_mail", "full", "emptied"]
+    success_rate: int  # u8
+    baseline: int  # u16 bit
+    confidence: int  # u8; 0 for collected & status
 
-class MailDropEvent(BaseModel):
-    device_ip: Optional[str] = None
-    timestamp: Optional[str] = None
-    distance_cm: float
-    baseline_cm: Optional[float] = 40.0
-    duration_ms: Optional[int] = None
-    confidence: Optional[float] = None
-    success_rate: Optional[float] = None
-    new_state: Optional[Literal["empty", "has_mail", "full", "emptied"]] = None
-    mailbox_state: Optional[Literal["empty", "has_mail", "full", "emptied"]] = None
+    @classmethod
+    def from_byte_stream(cls, payload: bytes) -> "MailboxTelemetry":
+        """
+        Parse binary MQTT payload into MailboxTelemetry.
 
+        Args:
+            payload: Raw bytes from MQTT broker
 
-class MailCollectedEvent(BaseModel):
-    device_ip: Optional[str] = None
-    timestamp: Optional[str] = None
-    before_cm: float
-    after_cm: float
-    baseline_cm: Optional[float] = 40.0
-    duration_ms: Optional[int] = None
-    success_rate: Optional[float] = None
-    new_state: Optional[Literal["empty", "has_mail", "full", "emptied"]] = None
-    mailbox_state: Optional[Literal["empty", "has_mail", "full", "emptied"]] = None
+        Returns:
+            MailboxTelemetry instance
+        """
+        state = ""
+        match payload[10]:
+            case 0:
+                state = "empty"
+            case 1:
+                state = "has_mail"
+            case 2:
+                state = "full"
+            case 3:
+                state = "emptied"
+            case _:
+                state = "empty"
+
+        return MailboxTelemetry(
+            device_ip=MailboxTelemetry.ip_string_from_bytes(payload[0:4]),
+            timestamp=int.from_bytes(payload[4:8], byteorder='big', signed=False),
+            distance=int.from_bytes(payload[8:10], byteorder='big', signed=False),
+            state=state,
+            success_rate=payload[11],
+            baseline=int.from_bytes(payload[12:14], byteorder='big', signed=False),
+            confidence=payload[14],
+        )
+
+    @classmethod
+    def ip_string_from_bytes(cls, payload: bytes) -> str:
+        # FUCKING LITTLE ENDIAN
+        return (
+            f"{int(payload[0])}.{int(payload[1])}.{int(payload[2])}.{int(payload[3])}"
+        )
+
+        # MailboxTelemetry.model_construct()
+
+        # TODO: Implement binary parsing
+        raise NotImplementedError("Binary parsing not yet implemented")
 
 
 # --- FastAPI Setup ---
@@ -134,51 +165,41 @@ class MailboxBackend:
                 topic = packet.variable_header.topic_name
 
                 try:
-                    payload = packet.payload.data.decode("utf-8")
+                    # Get raw binary payload
+                    payload = packet.payload.data
                     if not payload:
                         continue
-                    data = json.loads(payload)
-                    logger.info(f"received json: {data}")
 
-                    frontend_data = None
+                    # Parse binary telemetry data
+                    telemetry = MailboxTelemetry.from_byte_stream(payload)
+                    logger.info(
+                        f"Received telemetry from {telemetry.device_ip}: state={telemetry.state}, distance={telemetry.distance}"
+                    )
 
-                    try:
-                        if topic.endswith("/status"):
-                            status = MailboxStatus(**data)
-                            frontend_data = status.model_dump()
-                            logger.info(f"Status: {status.mailbox_state}")
+                    # Prepare data for frontend
+                    frontend_data = telemetry.model_dump()
 
-                        elif topic.endswith("/events/mail_drop"):
-                            event = MailDropEvent(**data)
-                            frontend_data = event.model_dump()
-                            frontend_data["event_type"] = "mail_drop"
-                            # Use new_state if available, otherwise use mailbox_state
-                            frontend_data["mailbox_state"] = event.new_state or event.mailbox_state
-                            logger.info(f"EVENT: Post Einwurf! Confidence: {event.confidence}")
+                    # Add event type based on topic
+                    if topic.endswith("/events/mail_drop"):
+                        frontend_data["event_type"] = "mail_drop"
+                        logger.info(
+                            f"EVENT: Post Einwurf! Confidence: {telemetry.confidence}"
+                        )
+                    elif topic.endswith("/events/mail_collected"):
+                        frontend_data["event_type"] = "mail_collected"
+                        logger.info(f"EVENT: Post entnommen!")
+                    elif topic.endswith("/status"):
+                        logger.info(f"Status: {telemetry.state}")
 
-                        elif topic.endswith("/events/mail_collected"):
-                            event = MailCollectedEvent(**data)
-                            frontend_data = event.model_dump()
-                            frontend_data["event_type"] = "mail_collected"
-                            # Use new_state if available, otherwise use mailbox_state
-                            frontend_data["mailbox_state"] = event.new_state or event.mailbox_state
-                            logger.info(f"EVENT: Post entnommen! Duration: {event.duration_ms}ms")
+                    # Rename fields for frontend compatibility
+                    frontend_data["mailbox_state"] = frontend_data.pop("state")
 
-                        if frontend_data:
-                            await manager.broadcast(frontend_data)
+                    await manager.broadcast(frontend_data)
 
-                    except ValidationError as ve:
-                        logger.error(f"Pydantic validation error on {topic}: {ve}")
-                        logger.error(f"Received data: {data}")
-                        # Fallback: send raw data with event_type added
-                        if topic.endswith("/events/mail_drop"):
-                            data["event_type"] = "mail_drop"
-                        elif topic.endswith("/events/mail_collected"):
-                            data["event_type"] = "mail_collected"
-                        await manager.broadcast(data)
-
-                except json.JSONDecodeError:
-                    logger.warning(f"Ungültiges JSON auf {topic}")
+                except NotImplementedError:
+                    logger.error(f"Binary parsing not yet implemented")
+                except ValidationError as ve:
+                    logger.error(f"Telemetry validation error on {topic}: {ve}")
                 except Exception as e:
                     logger.error(f"Verarbeitungsfehler: {e}")
 
@@ -192,9 +213,7 @@ async def main():
     config = uvicorn.Config(app=app, host="0.0.0.0", port=8000, log_level="warning")
     server = uvicorn.Server(config)
 
-    await asyncio.gather(
-        backend.process_messages(), server.serve()
-    )
+    await asyncio.gather(backend.process_messages(), server.serve())
 
 
 if __name__ == "__main__":
