@@ -319,10 +319,11 @@ Examples:
 
         elif args.command == 'decode':
             # Stream mode: continuously read 15-byte chunks
+            # Note: mosquitto_sub adds newlines between messages, so we need to handle them
             if args.stream:
                 message_count = 0
                 while True:
-                    # Read exactly 15 bytes
+                    # Read exactly 15 bytes for the payload
                     payload = sys.stdin.buffer.read(15)
 
                     # Exit if no more data
@@ -332,7 +333,8 @@ Examples:
                     # Warn if incomplete message
                     if len(payload) != 15:
                         print(f"Warning: Incomplete message ({len(payload)} bytes, expected 15)", file=sys.stderr)
-                        continue
+                        print(f"Hex dump: {payload.hex()}", file=sys.stderr)
+                        break
 
                     try:
                         # Decode payload
@@ -341,8 +343,19 @@ Examples:
 
                         print(json.dumps(data, indent=2 if args.pretty else None))
                         sys.stdout.flush()  # Ensure immediate output
+                        
+                        # mosquitto_sub adds a newline after each message - consume it
+                        newline = sys.stdin.buffer.read(1)
+                        if newline and newline != b'\n':
+                            # If it's not a newline, we're misaligned - print warning
+                            print(f"Warning: Expected newline after message #{message_count}, got: {newline.hex()}", file=sys.stderr)
+                            
                     except Exception as e:
                         print(f"Error decoding message #{message_count + 1}: {e}", file=sys.stderr)
+                        print(f"Hex dump of failed payload: {payload.hex()}", file=sys.stderr)
+                        # Try to recover by reading until we find something that looks like an IP
+                        # This is a simple heuristic - real recovery would need message framing
+                        break
 
             # Single message mode
             else:
