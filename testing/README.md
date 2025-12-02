@@ -2,15 +2,11 @@
 
 This directory contains testing utilities for the MQTT Mailbox binary protocol.
 
-## Files
+> DISCLAIMER: All testing is completely vibe-coded and I have absolutely zero fucking idea how any of it works
 
-- **`encode.py`**: CLI tool and library for encoding/decoding binary payloads
-- **`test_telemetry.py`**: Unit tests for `MailboxTelemetry.from_byte_stream()`
-- **`example_data.json`**: Example telemetry data for testing
+## MVP Format
 
-## Binary Protocol Format
-
-The protocol uses **big-endian** byte order with the following structure (15 bytes total):
+The mailbox-vibe protocol uses **big-endian** byte order with the following structure (15 bytes total):
 
 | Field        | Type | Bytes | Description                          |
 |--------------|------|-------|--------------------------------------|
@@ -28,6 +24,14 @@ The protocol uses **big-endian** byte order with the following structure (15 byt
 - `1` = `has_mail`
 - `2` = `full`
 - `3` = `emptied`
+
+
+## Receive MVP messages and immediately decode them
+```bash
+mosquitto_sub -h mailbox.oci.heofthetea.me -i test_sub -t "home/mailbox/#" | python3 encode.py decode --stream 
+```
+
+> **hint**: This outputs compact JSON -> use JQ to prettify it. 
 
 ## Using encode.py
 
@@ -215,6 +219,109 @@ python encode.py encode -i example_data.json -o payload.bin
 mosquitto_pub -h localhost -t "home/mailbox/status" -f payload.bin
 ```
 
+### Subscribing and Decoding with mosquitto_sub
+
+The `encode.py` decode command supports **streaming mode** for continuous processing of MQTT messages.
+
+#### Simple Piping with mosquitto_decode.sh (Easiest)
+
+```bash
+# Continuous streaming with automatic decoding
+mosquitto_sub -h localhost -t "home/mailbox/#" | ./mosquitto_decode.sh
+
+# With pretty-printing
+mosquitto_sub -h localhost -t "home/mailbox/#" | ./mosquitto_decode.sh --pretty
+
+# Specific topic
+mosquitto_sub -h localhost -t "home/mailbox/status" | ./mosquitto_decode.sh --pretty
+```
+
+The `mosquitto_decode.sh` wrapper automatically uses streaming mode to read 15-byte messages continuously.
+
+#### Direct Usage with encode.py --stream
+
+```bash
+# Stream mode: reads 15 bytes at a time, outputs JSON for each message
+mosquitto_sub -h localhost -t "home/mailbox/#" | python3 encode.py decode --stream
+
+# With pretty printing
+mosquitto_sub -h localhost -t "home/mailbox/#" | python3 encode.py decode --stream --pretty
+
+# Monitor only events
+mosquitto_sub -h localhost -t "home/mailbox/events/#" | python3 encode.py decode --stream --pretty
+```
+
+**How it works:**
+- `mosquitto_sub` outputs raw binary (15 bytes per message)
+- `encode.py --stream` reads exactly 15 bytes at a time
+- Each message is decoded and output immediately
+- Process continues until Ctrl+C or connection closes
+
+#### Example Output
+
+```bash
+$ mosquitto_sub -h localhost -t "home/mailbox/#" | python3 encode.py decode --stream --pretty
+--- Message #1 ---
+{
+  "device_ip": "192.168.1.100",
+  "timestamp": 1704067200,
+  "distance": 250,
+  "state": "empty",
+  "success_rate": 95,
+  "baseline": 300,
+  "confidence": 85
+}
+--- Message #2 ---
+{
+  "device_ip": "192.168.1.100",
+  "timestamp": 1704067212,
+  "distance": 372,
+  "state": "has_mail",
+  "success_rate": 98,
+  "baseline": 400,
+  "confidence": 87
+}
+```
+
+#### Converting to Hex First (Alternative Method)
+
+If you need to see the hex representation:
+
+```bash
+# Using xxd -p for plain hex output (removes spaces/newlines with tr)
+mosquitto_sub -h localhost -t "home/mailbox/status" -C 1 | xxd -p | tr -d '\n' | \
+  xargs python3 encode.py decode --hex
+
+# Note: This only works for single messages due to the way hex concatenates
+```
+
+For continuous hex monitoring, use `mosquitto_sub -F "%p"` format:
+
+```bash
+mosquitto_sub -h localhost -t "home/mailbox/#" -F "%p" | \
+  while read hex; do
+    python3 encode.py decode --hex "$hex" --pretty
+  done
+```
+
+#### Using with jq for Filtering
+
+```bash
+# Filter only "has_mail" states
+mosquitto_sub -h localhost -t "home/mailbox/#" | \
+  python3 encode.py decode --stream | \
+  jq 'select(.state == "has_mail")'
+
+# Extract specific fields
+mosquitto_sub -h localhost -t "home/mailbox/#" | \
+  python3 encode.py decode --stream | \
+  jq '{ip: .device_ip, state: .state, distance: .distance}'
+
+# Log to file
+mosquitto_sub -h localhost -t "home/mailbox/#" | \
+  python3 encode.py decode --stream >> mqtt_messages.jsonl
+```
+
 ## Debugging Tips
 
 1. **Verify payload length**: Should always be exactly 15 bytes
@@ -231,4 +338,25 @@ mosquitto_pub -h localhost -t "home/mailbox/status" -f payload.bin
    ```bash
    python encode.py encode -i data.json -o test.bin
    python encode.py decode -i test.bin --pretty
+   ```
+
+4. **Test streaming decode**: Simulate multiple messages
+   ```bash
+   # Generate two messages and stream them
+   (python3 encode.py encode -i example_data.json | xxd -r -p; \
+    python3 encode.py encode -i example_data.json | xxd -r -p) | \
+    python3 encode.py decode --stream --pretty
+   ```
+
+5. **Verify mosquitto_sub output**: Check raw binary is 15 bytes
+   ```bash
+   mosquitto_sub -h localhost -t "home/mailbox/status" -C 1 | wc -c
+   # Should output: 15
+   ```
+
+6. **Debug streaming issues**: Add message count
+   ```bash
+   mosquitto_sub -h localhost -t "home/mailbox/#" | \
+     python3 encode.py decode --stream 2>&1 | \
+     grep -E "(Message|Error)"
    ```

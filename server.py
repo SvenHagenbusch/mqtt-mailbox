@@ -44,11 +44,11 @@ logger = logging.getLogger("Server")
 class MailboxTelemetry(BaseModel):
     device_ip: str
     timestamp: int # unix timestamp
-    distance: int  # u16
+    distance: float  # u16
     state: Literal["empty", "has_mail", "full", "emptied"]
-    success_rate: int  # u8
-    baseline: int  # u16 bit
-    confidence: int  # u8; 0 for collected & status
+    success_rate: float  # %
+    baseline: float  # u16 bit
+    confidence: float  # %, 0 for collected & status
 
     @classmethod
     def from_byte_stream(cls, payload: bytes) -> "MailboxTelemetry":
@@ -77,11 +77,11 @@ class MailboxTelemetry(BaseModel):
         return MailboxTelemetry(
             device_ip=MailboxTelemetry.ip_string_from_bytes(payload[0:4]),
             timestamp=int.from_bytes(payload[4:8], byteorder='big', signed=False),
-            distance=int.from_bytes(payload[8:10], byteorder='big', signed=False),
+            distance=int.from_bytes(payload[8:10], byteorder='big', signed=False) / 10.0,
             state=state,
-            success_rate=payload[11],
-            baseline=int.from_bytes(payload[12:14], byteorder='big', signed=False),
-            confidence=payload[14],
+            success_rate=payload[11] / 100.0,
+            baseline=int.from_bytes(payload[12:14], byteorder='big', signed=False) / 10.0,
+            confidence=payload[14] / 100.0,
         )
 
     @classmethod
