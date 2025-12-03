@@ -107,6 +107,7 @@ pytest test_telemetry.py -v
 ```
 
 ### Encoding/Decoding Payloads
+We provide test scripts for working with the binary payloads.
 
 ```bash
 # Encode JSON to binary hex
@@ -119,42 +120,6 @@ python testing/encode.py decode --hex c0a801646592008000fa5f012c55 --pretty
 # Test payload generation locally
 cd testing
 ./test_publish.sh all
-```
-
-### Implementing the Parser
-
-The binary parsing method needs to be implemented in `server.py`:
-
-```python
-@classmethod
-def from_byte_stream(cls, payload: bytes) -> "MailboxTelemetry":
-    """Parse binary MQTT payload into MailboxTelemetry."""
-    import struct
-    
-    # Unpack big-endian format
-    ip_u32, timestamp_u32, distance_u16, state_u8, success_rate_u8, baseline_u16, confidence_u8 = \
-        struct.unpack('>IIHBBHB', payload)
-    
-    # Convert IP to string
-    device_ip = f"{(ip_u32 >> 24) & 0xFF}.{(ip_u32 >> 16) & 0xFF}.{(ip_u32 >> 8) & 0xFF}.{ip_u32 & 0xFF}"
-    
-    # Convert state to string
-    state_map = {0: "empty", 1: "has_mail", 2: "full", 3: "emptied"}
-    state = state_map[state_u8]
-    
-    # Convert timestamp to time object (or keep as int depending on your needs)
-    from datetime import datetime
-    timestamp = datetime.fromtimestamp(timestamp_u32).time()
-    
-    return cls(
-        device_ip=device_ip,
-        timestamp=timestamp,
-        distance=distance_u16,
-        state=state,
-        success_rate=success_rate_u8,
-        baseline=baseline_u16,
-        confidence=confidence_u8
-    )
 ```
 
 ## API Endpoints
@@ -174,7 +139,3 @@ def from_byte_stream(cls, payload: bytes) -> "MailboxTelemetry":
 
 - [Testing Guide](testing/README.md) - Detailed testing documentation
 - [Binary Protocol](testing/README.md#binary-protocol-format) - Protocol specification
-
-## License
-
-MIT
