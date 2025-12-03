@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IoT Briefkasten Dashboard</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
     <style>
         .status-card { text-align: center; padding: 20px; border-radius: 15px; margin-bottom: 20px; transition: all 0.3s ease; }
@@ -13,6 +14,10 @@
         .state-emptied { background-color: #3498db; color: white; }
         .huge-icon { width: 200px; height: auto; display: block; margin: 0 auto 10px; }
         .metric-value { font-size: 2rem; font-weight: bold; }
+        .header-icon { width: 24px; height: 24px; vertical-align: middle; margin-right: 8px; }
+        .events-container { display: flex; align-items: stretch; }
+        .events-icon { width: 80px; height: auto; margin-right: 20px; flex-shrink: 0; }
+        .events-content { flex-grow: 1; }
     </style>
 </head>
 <body>
@@ -24,32 +29,37 @@
 
         <div class="grid">
             <article>
-                <header>📏 Distanz Sensor</header>
+                <header><img src="/static/distance.png" alt="" class="header-icon">Distanz Sensor</header>
                 <div class="metric-value"><span id="distance">--</span> cm</div>
                 <progress id="dist-progress" value="0" max="100"></progress>
                 <small>Rohwert vom Ultraschall</small>
             </article>
 
             <article>
-                <header>📡 Signalqualität</header>
+                <header><img src="/static/quality.png" alt="" class="header-icon">Signalqualität</header>
                 <div class="metric-value"><span id="confidence">--</span> %</div>
                 <small>Erfolgsrate der Messung</small>
             </article>
         </div>
 
         <article>
-            <header>📝 Letzte Ereignisse</header>
-            <table role="grid">
-                <thead>
-                    <tr>
-                        <th>Zeit</th>
-                        <th>Event</th>
-                        <th>Details</th>
-                    </tr>
-                </thead>
-                <tbody id="event-log">
-                    </tbody>
-            </table>
+            <header>Letzte Ereignisse</header>
+            <div class="events-container">
+                <img src="/static/past_events.png" alt="Past Events" class="events-icon">
+                <div class="events-content">
+                    <table role="grid">
+                        <thead>
+                            <tr>
+                                <th>Zeit</th>
+                                <th>Event</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="event-log">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
         </article>
 
         <footer>
