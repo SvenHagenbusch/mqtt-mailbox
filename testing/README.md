@@ -28,7 +28,7 @@ The mailbox-vibe protocol uses **big-endian** byte order with the following stru
 
 ## Receive MVP messages and immediately decode them
 ```bash
-mosquitto_sub -h mailbox.oci.heofthetea.me -i test_sub -t "home/mailbox/#" | python3 encode.py decode --stream 
+mosquitto_sub -h mailbox.oci.heofthetea.me -i test_sub -t "home/mailbox/#" | python3 mvp.py decode --stream 
 ```
 
 > **hint**: This outputs compact JSON -> use JQ to prettify it. 

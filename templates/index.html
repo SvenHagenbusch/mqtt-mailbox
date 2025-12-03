@@ -11,21 +11,15 @@
         .state-mail { background-color: #f1c40f; color: black; }
         .state-full { background-color: #e74c3c; color: white; }
         .state-emptied { background-color: #3498db; color: white; }
-        .huge-icon { font-size: 4rem; display: block; margin-bottom: 10px; }
+        .huge-icon { width: 200px; height: auto; display: block; margin: 0 auto 10px; }
         .metric-value { font-size: 2rem; font-weight: bold; }
     </style>
 </head>
 <body>
     <main class="container">
-        <hgroup>
-            <h1>📬 Smart Mailbox Monitor</h1>
-            <h2>Live Status vom ESP32</h2>
-        </hgroup>
-
         <article id="status-card" class="status-card state-empty">
-            <span id="status-icon" class="huge-icon">📭</span>
+            <img id="status-icon" class="huge-icon" src="/static/empty.png" alt="Mailbox Status">
             <h3 id="status-text">Warte auf Daten...</h3>
-            <small>Zustand</small>
         </article>
 
         <div class="grid">

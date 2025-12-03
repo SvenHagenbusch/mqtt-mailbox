@@ -63,22 +63,22 @@ function updateState(state) {
   switch (state) {
     case "empty":
       statusCard.classList.add("state-empty");
-      statusIcon.innerText = "📭";
+      statusIcon.src = "/static/empty.png";
       statusText.innerText = "Briefkasten ist leer";
       break;
     case "has_mail":
       statusCard.classList.add("state-mail");
-      statusIcon.innerText = "📬";
+      statusIcon.src = "/static/has_mail.png";
       statusText.innerText = "Neue Post ist da!";
       break;
     case "full":
       statusCard.classList.add("state-full");
-      statusIcon.innerText = "🈵";
+      statusIcon.src = "/static/mail_full.png";
       statusText.innerText = "Briefkasten ist voll!";
       break;
     case "emptied":
       statusCard.classList.add("state-emptied");
-      statusIcon.innerText = "🗑️";
+      statusIcon.src = "/static/empty.png";
       statusText.innerText = "Wurde gerade geleert";
       break;
     default:
