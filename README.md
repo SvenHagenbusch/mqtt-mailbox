@@ -44,6 +44,9 @@ pip install -r requirements.txt
 
 ```bash
 # Start MQTT broker and web server
+uv run server.py
+
+# Alternatively:
 python server.py
 
 # Or with Docker

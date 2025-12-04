@@ -14,7 +14,8 @@
         .state-emptied { background-color: #3498db; color: white; }
         .huge-icon { width: 200px; height: auto; display: block; margin: 0 auto 10px; }
         .metric-value { font-size: 2rem; font-weight: bold; }
-        .header-icon { width: 24px; height: 24px; vertical-align: middle; margin-right: 8px; }
+        .metric-section { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
+        .metric-icon { width: 80px; height: 80px; object-fit: contain; }
         .events-container { display: flex; align-items: stretch; }
         .events-icon { width: 80px; height: auto; margin-right: 20px; flex-shrink: 0; }
         .events-content { flex-grow: 1; }
@@ -29,15 +30,25 @@
 
         <div class="grid">
             <article>
-                <header><img src="/static/distance.png" alt="" class="header-icon">Distanz Sensor</header>
-                <div class="metric-value"><span id="distance">--</span> cm</div>
-                <progress id="dist-progress" value="0" max="100"></progress>
+                <header>Distanz Sensor</header>
+                <div class="metric-section">
+                    <img src="/static/distance.png" alt="Distanz Icon" class="metric-icon">
+                    <div>
+                        <div class="metric-value"><span id="distance">--</span> cm</div>
+                        <progress id="dist-progress" value="0" max="100"></progress>
+                    </div>
+                </div>
                 <small>Rohwert vom Ultraschall</small>
             </article>
 
             <article>
-                <header><img src="/static/quality.png" alt="" class="header-icon">Signalqualität</header>
-                <div class="metric-value"><span id="confidence">--</span> %</div>
+                <header>Signalqualität</header>
+                <div class="metric-section">
+                    <img src="/static/quality.png" alt="Signalqualität Icon" class="metric-icon">
+                    <div>
+                        <div class="metric-value"><span id="confidence">--</span> %</div>
+                    </div>
+                </div>
                 <small>Erfolgsrate der Messung</small>
             </article>
         </div>
